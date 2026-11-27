@@ -1,5 +1,13 @@
 import requests
 
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich.prompt import Prompt, IntPrompt
+from rich.text import Text
+
+console = Console()
+
 
 def get_coordinates(city):
     url = "https://geocoding-api.open-meteo.com/v1/search"
@@ -12,8 +20,7 @@ def get_coordinates(city):
     response = requests.get(url, params=params, timeout=10)
     response.raise_for_status()
 
-    data = response.json()
-    results = data.get("results", [])
+    results = response.json().get("results", [])
 
     if not results:
         return None
@@ -21,26 +28,30 @@ def get_coordinates(city):
     if len(results) == 1:
         return results[0]
 
-    print("\nMatching locations:")
+    table = Table(title="Matching Locations")
+
+    table.add_column("No.", style="cyan")
+    table.add_column("City", style="bold white")
+    table.add_column("Region")
+    table.add_column("Country")
 
     for index, location in enumerate(results, start=1):
-        name = location["name"]
-        region = location.get("admin1", "")
-        country = location.get("country", "Unknown")
+        table.add_row(
+            str(index),
+            location["name"],
+            location.get("admin1", ""),
+            location.get("country", "Unknown")
+        )
 
-        print(f"{index}. {name}, {region}, {country}")
+    console.print(table)
 
     while True:
-        try:
-            choice = int(input("\nSelect a location: "))
+        choice = IntPrompt.ask("Select a location")
 
-            if 1 <= choice <= len(results):
-                return results[choice - 1]
+        if 1 <= choice <= len(results):
+            return results[choice - 1]
 
-            print("Invalid selection.")
-
-        except ValueError:
-            print("Please enter a number.")
+        console.print("[red]Invalid selection.[/red]")
 
 
 def get_weather(latitude, longitude):
@@ -64,59 +75,112 @@ def get_weather(latitude, longitude):
 def display_weather(location, weather):
     current = weather["current"]
 
-    print()
-    print("Location:", location["name"], location.get("country", "Unknown"))
-    print("Temperature:", current["temperature_2m"], "°C")
-    print("Feels like:", current["apparent_temperature"], "°C")
-    print("Humidity:", current["relative_humidity_2m"], "%")
-    print("Wind speed:", current["wind_speed_10m"], "km/h")
+    content = Text()
+
+    content.append(
+        f"{current['temperature_2m']}°C\n\n",
+        style="bold cyan"
+    )
+
+    content.append(
+        f"Feels like: {current['apparent_temperature']}°C\n"
+    )
+
+    content.append(
+        f"Humidity: {current['relative_humidity_2m']}%\n"
+    )
+
+    content.append(
+        f"Wind speed: {current['wind_speed_10m']} km/h"
+    )
+
+    title = Text(
+        f"{location['name']}, {location.get('country', 'Unknown')}",
+        style="bold cyan"
+    )
+
+    console.print(
+        Panel(content, title=title, border_style="cyan")
+    )
 
 
 def display_forecast(weather):
     daily = weather["daily"]
 
-    print("\n7-Day Forecast")
-    print("-" * 50)
+    table = Table(
+        title="7-Day Weather Forecast",
+        header_style="bold cyan",
+        border_style="blue"
+    )
+
+    table.add_column("Date", style="white")
+    table.add_column("High", style="red")
+    table.add_column("Low", style="cyan")
+    table.add_column("Precipitation")
 
     for i in range(len(daily["time"])):
-        date = daily["time"][i]
-        maximum = daily["temperature_2m_max"][i]
-        minimum = daily["temperature_2m_min"][i]
         rain = daily["precipitation_probability_max"][i]
 
-        print(f"{date} | High: {maximum}°C | Low: {minimum}°C | Rain: {rain}%")
+        if rain is None:
+            rain_text = Text("N/A", style="dim")
+        elif rain >= 50:
+            rain_text = Text(f"{rain}%", style="yellow")
+        else:
+            rain_text = Text(f"{rain}%", style="green")
+
+        table.add_row(
+            daily["time"][i],
+            f"{daily['temperature_2m_max'][i]}°C",
+            f"{daily['temperature_2m_min'][i]}°C",
+            rain_text
+        )
+
+    console.print(table)
 
 
 def main():
-    city = input("Enter a city: ").strip()
+    console.print(
+        Panel(
+            "[bold cyan]WEATHER CLI[/bold cyan]\n"
+            "Real-time weather and forecasts",
+            border_style="cyan"
+        )
+    )
+
+    city = Prompt.ask("Enter a city").strip()
 
     if not city:
-        print("Please enter a city name.")
+        console.print("[red]Please enter a city name.[/red]")
         return
 
     try:
         location = get_coordinates(city)
 
         if location is None:
-            print("City not found.")
+            console.print("[red]City not found.[/red]")
             return
 
-        weather = get_weather(
-            location["latitude"],
-            location["longitude"]
-        )
+        with console.status("[cyan]Retrieving weather data..."):
+            weather = get_weather(
+                location["latitude"],
+                location["longitude"]
+            )
 
         display_weather(location, weather)
         display_forecast(weather)
 
+        console.print(
+            "\n[dim]Weather data provided by Open-Meteo[/dim]"
+        )
+
     except requests.exceptions.Timeout:
-        print("Request timed out. Please try again.")
+        console.print("[red]Request timed out. Please try again.[/red]")
 
     except requests.exceptions.ConnectionError:
-        print("Connection failed. Check your internet connection.")
+        console.print("[red]Connection failed. Check your internet connection.[/red]")
 
     except requests.exceptions.RequestException:
-        print("An error occurred while contacting the API.")
+        console.print("[red]An error occurred while contacting the API.[/red]")
 
 
 if __name__ == "__main__":
