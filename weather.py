@@ -1,3 +1,4 @@
+import argparse
 import requests
 
 from rich.console import Console
@@ -7,6 +8,43 @@ from rich.prompt import Prompt, IntPrompt
 from rich.text import Text
 
 console = Console()
+
+VERSION = "0.1.0"
+
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description="Real-time weather and forecast application."
+    )
+
+    parser.add_argument(
+        "city",
+        nargs="?",
+        help="City name"
+    )
+
+    parser.add_argument(
+        "--forecast",
+        type=int,
+        choices=range(1, 8),
+        default=7,
+        metavar="DAYS",
+        help="Number of forecast days (1-7)"
+    )
+
+    parser.add_argument(
+        "--fahrenheit",
+        action="store_true",
+        help="Display temperatures in Fahrenheit"
+    )
+
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"Weather CLI {VERSION}"
+    )
+
+    return parser.parse_args()
 
 
 def get_coordinates(city):
@@ -54,7 +92,7 @@ def get_coordinates(city):
         console.print("[red]Invalid selection.[/red]")
 
 
-def get_weather(latitude, longitude):
+def get_weather(latitude, longitude, days, fahrenheit):
     url = "https://api.open-meteo.com/v1/forecast"
 
     params = {
@@ -62,7 +100,8 @@ def get_weather(latitude, longitude):
         "longitude": longitude,
         "current": "temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m",
         "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max",
-        "forecast_days": 7,
+        "forecast_days": days,
+        "temperature_unit": "fahrenheit" if fahrenheit else "celsius",
         "timezone": "auto"
     }
 
@@ -74,16 +113,17 @@ def get_weather(latitude, longitude):
 
 def display_weather(location, weather):
     current = weather["current"]
+    unit = weather["current_units"]["temperature_2m"]
 
     content = Text()
 
     content.append(
-        f"{current['temperature_2m']}°C\n\n",
+        f"{current['temperature_2m']}{unit}\n\n",
         style="bold cyan"
     )
 
     content.append(
-        f"Feels like: {current['apparent_temperature']}°C\n"
+        f"Feels like: {current['apparent_temperature']}{unit}\n"
     )
 
     content.append(
@@ -104,11 +144,12 @@ def display_weather(location, weather):
     )
 
 
-def display_forecast(weather):
+def display_forecast(weather, days):
     daily = weather["daily"]
+    unit = weather["daily_units"]["temperature_2m_max"]
 
     table = Table(
-        title="7-Day Weather Forecast",
+        title=f"{days}-Day Weather Forecast",
         header_style="bold cyan",
         border_style="blue"
     )
@@ -130,8 +171,8 @@ def display_forecast(weather):
 
         table.add_row(
             daily["time"][i],
-            f"{daily['temperature_2m_max'][i]}°C",
-            f"{daily['temperature_2m_min'][i]}°C",
+            f"{daily['temperature_2m_max'][i]}{unit}",
+            f"{daily['temperature_2m_min'][i]}{unit}",
             rain_text
         )
 
@@ -139,6 +180,8 @@ def display_forecast(weather):
 
 
 def main():
+    args = parse_arguments()
+
     console.print(
         Panel(
             "[bold cyan]WEATHER CLI[/bold cyan]\n"
@@ -147,7 +190,8 @@ def main():
         )
     )
 
-    city = Prompt.ask("Enter a city").strip()
+    city = args.city or Prompt.ask("Enter a city")
+    city = city.strip()
 
     if not city:
         console.print("[red]Please enter a city name.[/red]")
@@ -163,11 +207,13 @@ def main():
         with console.status("[cyan]Retrieving weather data..."):
             weather = get_weather(
                 location["latitude"],
-                location["longitude"]
+                location["longitude"],
+                args.forecast,
+                args.fahrenheit
             )
 
         display_weather(location, weather)
-        display_forecast(weather)
+        display_forecast(weather, args.forecast)
 
         console.print(
             "\n[dim]Weather data provided by Open-Meteo[/dim]"
