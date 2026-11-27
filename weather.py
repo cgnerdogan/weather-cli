@@ -6,7 +6,7 @@ def get_coordinates(city):
 
     params = {
         "name": city,
-        "count": 1
+        "count": 5
     }
 
     response = requests.get(url, params=params, timeout=10)
@@ -18,7 +18,29 @@ def get_coordinates(city):
     if not results:
         return None
 
-    return results[0]
+    if len(results) == 1:
+        return results[0]
+
+    print("\nMatching locations:")
+
+    for index, location in enumerate(results, start=1):
+        name = location["name"]
+        region = location.get("admin1", "")
+        country = location.get("country", "Unknown")
+
+        print(f"{index}. {name}, {region}, {country}")
+
+    while True:
+        try:
+            choice = int(input("\nSelect a location: "))
+
+            if 1 <= choice <= len(results):
+                return results[choice - 1]
+
+            print("Invalid selection.")
+
+        except ValueError:
+            print("Please enter a number.")
 
 
 def get_weather(latitude, longitude):
